@@ -8,6 +8,8 @@ Panels:
                                       into registers; works on any batch, but on
                                       current panels its light gray sits close
                                       to white
+- GDEY075Z08 (Good Display):          800x480 black/white/red with differential
+                                      black/white partial refresh
 - P750057-MF1-A:                      800x480 black/white/red (not a Good Display
                                       panel; equivalent to their GDEY075Z08,
                                       whose demo code the driver was ported from)
@@ -41,8 +43,8 @@ class UC8179Mono(RequiredPinsModel):
 
 
 class UC8179BWR(RequiredPinsModel):
-    def __init__(self, name, **defaults):
-        super().__init__(name, "EPaperUC8179BWR", **defaults)
+    def __init__(self, name, class_name="EPaperUC8179BWR", **defaults):
+        super().__init__(name, class_name, **defaults)
 
     def get_init_sequence(self, config):
         width, height = self.get_dimensions(config)
@@ -231,6 +233,15 @@ UC8179Gray4Lut(
 
 UC8179BWR(
     "P750057-MF1-A",
+    width=800,
+    height=480,
+    data_rate="4MHz",
+    minimum_update_interval="30s",
+)
+
+UC8179BWR(
+    "GDEY075Z08",
+    class_name="EPaperGDEY075Z08",
     width=800,
     height=480,
     data_rate="4MHz",

@@ -9,21 +9,27 @@ namespace esphome::epaper_spi {
  *
  * 7.5", 800x480, black/white/red, UC8179.
  *
- * Full refresh uses the normal UC8179 BWR implementation.
+ * Red takes priority over black within a rendered frame, regardless of draw
+ * order. White explicitly clears either color; clear before drawing a new
+ * frame. Keep red content static between full refreshes.
+ * Full refresh uses the normal UC8179 BWR transfer implementation.
  *
  * Partial refresh uses the GDEY075Z08 black/white differential mode:
  *   - Red pixels remain static.
  *   - Black/white pixels can change.
  *   - A monochrome composite of black + red is retained as the
- *     previous frame for differential refresh.
+ *     previous frame to seed both RAM planes after reset.
+ *   - Inside the partial window, only new data is written via 0x13.
  */
 class EPaperGDEY075Z08 : public EPaperUC8179BWR {
  public:
   using EPaperUC8179BWR::EPaperUC8179BWR;
 
   void setup() override;
+  void fill(Color color) override;
 
  protected:
+  void draw_pixel_at(int x, int y, Color color) override;
   bool initialise(bool partial) override;
   bool transfer_data() override;
 

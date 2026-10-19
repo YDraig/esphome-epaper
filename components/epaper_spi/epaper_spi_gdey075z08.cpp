@@ -2,12 +2,59 @@
 
 #include <algorithm>
 
+#include "epaper_spi_bwr_color.h"
+
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 namespace esphome::epaper_spi {
 
 static const char *const TAG = "epaper_spi.gdey075z08";
+
+void EPaperGDEY075Z08::draw_pixel_at(int x, int y, Color color) {
+  if (!this->rotate_coordinates_(x, y))
+    return;
+
+  const size_t pos = (x / 8) + (y * this->row_width_);
+  const uint8_t bit = 0x80 >> (x & 0x07);
+  const size_t red_pos = this->buffer_length_ / 2u + pos;
+  const auto bwr = color_to_bwr(color);
+
+  // Black must not punch holes in static red artwork: a B/W partial refresh
+  // cannot restore red pigment when that black content subsequently moves.
+  if (bwr == BwrState::BWR_BLACK) {
+    if ((this->buffer_[red_pos] & bit) == 0)
+      this->buffer_[pos] |= bit;
+    return;
+  }
+
+  this->buffer_[pos] &= ~bit;
+  if (bwr == BwrState::BWR_RED)
+    this->buffer_[red_pos] |= bit;
+  else
+    this->buffer_[red_pos] &= ~bit;  // White explicitly clears both planes.
+}
+
+void EPaperGDEY075Z08::fill(Color color) {
+  if (color_to_bwr(color) != BwrState::BWR_BLACK) {
+    EPaperUC8179BWR::fill(color);
+    return;
+  }
+  if (this->get_clipping().is_set()) {
+    Display::fill(color);
+    return;
+  }
+
+  // Match draw_pixel_at() without a per-pixel loop for an unclipped fill.
+  const size_t frame = this->buffer_length_ / 2u;
+  for (size_t i = 0; i < frame; i++)
+    this->buffer_[i] = static_cast<uint8_t>(~this->buffer_[frame + i]);
+
+  this->x_low_ = 0;
+  this->y_low_ = 0;
+  this->x_high_ = this->width_;
+  this->y_high_ = this->height_;
+}
 
 void EPaperGDEY075Z08::setup() {
   // EPaperUC8179BWR does not override setup(), so initialise the normal
@@ -123,13 +170,38 @@ bool HOT EPaperGDEY075Z08::transfer_data() {
 
   uint8_t bytes_to_send[MAX_TRANSFER_SIZE];
 
+  // Match Good Display's EPD_SetRAMValue_Part(): after reset, seed BOTH
+  // controller RAM planes with the previous composite before PARTIAL IN.
+  // EPD_Dis_PartAll() then writes only the new image to 0x13. Seeding only
+  // 0x10 inside the partial window does not reproduce that initialization.
+  // Keep these transfers chunked so the ESPHome loop remains responsive.
+  while (this->current_data_index_ < 2 * frame) {
+    const size_t plane = this->current_data_index_ / frame;
+    const size_t end = (plane + 1) * frame;
+    if (this->current_data_index_ % frame == 0)
+      this->command(plane == 0 ? 0x10 : 0x13);
+
+    this->start_data_();
+    while (this->current_data_index_ < end) {
+      const size_t offset = this->current_data_index_ % frame;
+      const size_t n = std::min(MAX_TRANSFER_SIZE, end - this->current_data_index_);
+      this->write_array(&this->old_data_[offset], n);
+      this->current_data_index_ += n;
+      if (millis() - start_time > MAX_TRANSFER_TIME) {
+        this->disable();
+        return false;
+      }
+    }
+    this->disable();
+  }
+
   /*
    * Enter partial mode and select the full display as the partial window.
    *
    * We're doing a full-screen differential update for now. Later we can
    * optimise this further to restrict the window to the clock digits.
    */
-  if (this->current_data_index_ == 0) {
+  if (this->current_data_index_ == 2 * frame) {
     const uint16_t xe = this->width_ - 1;
     const uint16_t ye = this->height_ - 1;
 
@@ -153,35 +225,7 @@ bool HOT EPaperGDEY075Z08::transfer_data() {
   }
 
   /*
-   * Phase 1 — OLD FRAME
-   *
-   * Send the previously displayed B/W composite to DTM1 (0x10).
-   */
-  if (this->current_data_index_ < frame) {
-    if (this->current_data_index_ == 0)
-      this->command(0x10);
-
-    this->start_data_();
-
-    while (this->current_data_index_ < frame) {
-      const size_t n = std::min(MAX_TRANSFER_SIZE, frame - this->current_data_index_);
-
-      std::copy_n(&this->old_data_[this->current_data_index_], n, bytes_to_send);
-
-      this->write_array(bytes_to_send, n);
-      this->current_data_index_ += n;
-
-      if (millis() - start_time > MAX_TRANSFER_TIME) {
-        this->disable();
-        return false;
-      }
-    }
-
-    this->disable();
-  }
-
-  /*
-   * Phase 2 — NEW FRAME
+   * Partial-window update — NEW FRAME ONLY
    *
    * Fold ESPHome's two BWR planes into the one B/W representation expected
    * by the GDEY075Z08 differential waveform:
@@ -192,18 +236,18 @@ bool HOT EPaperGDEY075Z08::transfer_data() {
    * Black pixel       -> 0
    * Existing red pixel-> 0
    *
-   * Red should therefore remain unchanged during partial-refresh cycles.
+   * The red plane must remain unchanged between full B/W/R refreshes.
    */
-  if (this->current_data_index_ < 2 * frame) {
-    if (this->current_data_index_ == frame)
+  if (this->current_data_index_ < 3 * frame) {
+    if (this->current_data_index_ == 2 * frame)
       this->command(0x13);
 
     this->start_data_();
 
-    while (this->current_data_index_ < 2 * frame) {
-      const size_t offset = this->current_data_index_ - frame;
+    while (this->current_data_index_ < 3 * frame) {
+      const size_t offset = this->current_data_index_ - 2 * frame;
 
-      const size_t n = std::min(MAX_TRANSFER_SIZE, (2 * frame) - this->current_data_index_);
+      const size_t n = std::min(MAX_TRANSFER_SIZE, (3 * frame) - this->current_data_index_);
 
       for (size_t i = 0; i < n; i++) {
         const uint8_t black = this->buffer_[offset + i];

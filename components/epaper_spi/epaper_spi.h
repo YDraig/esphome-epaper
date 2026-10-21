@@ -76,7 +76,7 @@ class EPaperBase : public Display,
 
   // Force a full (de-ghosting) refresh on the next update.
   void full_refresh() {
-    this->update_count_ = 0;
+    this->full_refresh_pending_ = true;
     this->update();
   }
 
@@ -189,6 +189,8 @@ class EPaperBase : public Display,
   // don't have to know the polarity and set `inverted: true` in YAML.
   bool busy_invert_{false};
   bool waiting_for_idle_{};
+  bool full_refresh_pending_{};
+  uint32_t waiting_for_idle_start_{};
   uint32_t delay_until_{};  // timestamp until which to delay processing
   uint16_t next_delay_{};   // milliseconds to delay before next state
   uint8_t transform_{};
@@ -200,7 +202,6 @@ class EPaperBase : public Display,
 
 #if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERBOSE
   uint32_t waiting_for_idle_last_print_{};
-  uint32_t waiting_for_idle_start_{};
 #endif
 #if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_DEBUG
   uint32_t update_start_time_{};

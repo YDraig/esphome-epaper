@@ -8,6 +8,7 @@ namespace esphome::epaper_spi {
 
 static const char *const TAG = "epaper_spi";
 static constexpr size_t EPAPER_MAX_CMD_LOG_BYTES = 128;
+static constexpr uint32_t BUSY_TIMEOUT_MS = 60000;
 
 static constexpr const char *const EPAPER_STATE_STRINGS[] = {
     "IDLE",          "UPDATE",   "RESET",          "RESET_END", "SHOULD_WAIT", "INITIALISE",
@@ -121,8 +122,14 @@ void EPaperBase::update_effective_transform_() {
 
 void EPaperBase::update() {
   if (this->state_ != EPaperState::IDLE) {
-    ESP_LOGE(TAG, "Display already in state %s", epaper_state_to_string_());
+    ESP_LOGD(TAG, "Display already in state %s; full refresh pending=%s",
+             epaper_state_to_string_(), TRUEFALSE(this->full_refresh_pending_));
     return;
+  }
+  // Consume the request only when starting a new frame, never mid-refresh.
+  if (this->full_refresh_pending_) {
+    this->update_count_ = 0;
+    this->full_refresh_pending_ = false;
   }
   this->set_state_(EPaperState::UPDATE);
   this->enable_loop();
@@ -132,9 +139,7 @@ void EPaperBase::update() {
 }
 
 void EPaperBase::wait_for_idle_(bool should_wait) {
-#if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERBOSE
   this->waiting_for_idle_start_ = millis();
-#endif
   this->waiting_for_idle_ = should_wait;
 }
 
@@ -157,6 +162,19 @@ void EPaperBase::loop() {
       ESP_LOGV(TAG, "Screen was busy for %u ms", (unsigned) (millis() - this->waiting_for_idle_start_));
 #endif
     } else {
+      if (now - this->waiting_for_idle_start_ >= BUSY_TIMEOUT_MS) {
+        ESP_LOGE(TAG, "BUSY timeout in state %s; next update will retry a full refresh",
+                 this->epaper_state_to_string_());
+        this->status_set_warning();
+        this->disable();
+        this->current_data_index_ = 0;
+        this->next_delay_ = 0;
+        // The panel's contents are uncertain. Never reuse partial history.
+        this->full_refresh_pending_ = true;
+        this->set_state_(EPaperState::IDLE);
+        // Retry on the next scheduled update, avoiding a tight reset loop.
+        return;
+      }
 #if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERBOSE
       if (now - this->waiting_for_idle_last_print_ >= 1000) {
         ESP_LOGV(TAG, "Waiting for idle in state %s", this->epaper_state_to_string_());
@@ -199,6 +217,8 @@ void EPaperBase::process_state_() {
       this->do_update_();  // Calls ESPHome (current page) lambda
       if (this->x_high_ < this->x_low_ || this->y_high_ < this->y_low_) {
         this->set_state_(EPaperState::IDLE);
+        if (this->full_refresh_pending_)
+          this->update();
         return;
       }
       this->set_state_(EPaperState::RESET);
@@ -236,6 +256,9 @@ void EPaperBase::process_state_() {
       this->deep_sleep();
       this->set_state_(EPaperState::IDLE);
       ESP_LOGD(TAG, "Display update took %" PRIu32 " ms", millis() - this->update_start_time_);
+      this->status_clear_warning();
+      if (this->full_refresh_pending_)
+        this->update();
       break;
   }
 }

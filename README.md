@@ -36,6 +36,7 @@ driver family (BWR plane polarity in particular should be confirmed on hardware)
 | `gdey075t7-gray4` ¹ | UC8179 | 4-level gray | 800×480 | full only | `EPaperUC8179Gray4` | ✅ GDEY075T7 (FPC-C001 21.08.30 HB) | [Good Display · A32-GDEY075T7-FP4G demo](https://www.good-display.com/product/396.html) + UC8179 datasheet |
 | `gdey075t7-gray4-lut` ² | UC8179 | 4-level gray | 800×480 | full only | `EPaperUC8179Gray4Lut` | ✅ GDEY075T7 (FPC-C001 21.08.30 HB) | [Good Display · GDEY075T7_4Gray demo (via LaskaKit)](https://github.com/LaskaKit/Testcode_examples/blob/main/Displays/E-Paper/7-50/GDEY075T7/GDEY075T7_4Gray/GDEY075T7_4Gray.ino) + UC8179 datasheet |
 | `p750057-mf1-a` | UC8179 | B/W/R | 800×480 | fast | `EPaperUC8179BWR` | ✅ P750057-MF1-A | [gooddisplayshare · GDEY075Z08 example](https://github.com/gooddisplayshare/ESP32epdx/tree/main/examples/3-Colors%20(BWR)/7.5/GDEY075Z08) |
+| `gdey075z08` | UC8179 | B/W/R | 800×480 | differential partial | `EPaperGDEY075Z08` | ✅ GDEY075Z08 | [gooddisplayshare · GDEY075Z08 example](https://github.com/gooddisplayshare/ESP32epdx/tree/main/examples/3-Colors%20(BWR)/7.5/GDEY075Z08) |
 
 ¹ Costs a second framebuffer (96 KB at 800×480) and ~2.5 s per refresh, and
 `full_update_every` has no effect. Its waveform comes from OTP, which only
@@ -132,6 +133,7 @@ The following e-paper display models are supported by this component:
 | gdew042z15    | 4.2"  | B/W/R  | 400x300    | N               | N            | WF0420T80CZ15(WFT0420CZ15 LW)                 | Good Display GDEW042Z15    | UC8176(IL0398)    |
 | gdey075t7     | 7.5"  | B/W    | 800x480    | Y               | Y            | GDEY075T7(FPC-C001 21.08.30 HB)               | Good Display GDEY075T7     | UC8179            |
 | p750057-mf1-a | 7.5"  | B/W/R  | 800x480    | N               | Y            | (P750057-MF1-A)                               | Good Display GDEY075Z08    | UC8179            |
+| gdey075z08    | 7.5"  | B/W/R  | 800x480    | Y               | N            | GDEY075Z08 (GDU075R1/GDP075RW1)               | Good Display GDEY075Z08    | UC8179            |
 
 ### Usage
 
